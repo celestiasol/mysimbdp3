@@ -1,6 +1,6 @@
-# Streaming analytics starter
+# mysimbdp -- Streaming analytics platform
 
-This repository contains a minimal but assignment-compliant streaming analytics platform built with:
+The purpose of this streaming analytics platform is to ingest, process, and analyze LLM inference events in near real time so that a tenant can monitor usage patterns, detect abnormal behavior early, and persist analytics results for later investigation and reporting. The platform was built with the following technologies:
 
 - **Python** for all custom code
 - **Apache Kafka** as the messaging system
@@ -9,7 +9,7 @@ This repository contains a minimal but assignment-compliant streaming analytics 
 - **Docker Compose** as the local multi-container test environment
 - **Azure LLM inference trace** as the replayed input dataset
 
-The implementation is intentionally simple: one tenant-side replay producer, one streaming analytics application, one persistent sink, and one tenant-side alert consumer. The repository is structured so that the implementation details stay here in the `README`, while the report focuses on directly answering the assignment questions.
+The implementation is simple: one tenant-side replay producer, one streaming analytics application, one persistent sink, and one tenant-side alert consumer. This `README` covers the implementation details of the repository, more details on how the questions in the assignments are addressed can be found in the report.
 
 ## Repository layout
 
@@ -302,7 +302,7 @@ Produced by `streamanalyticsapp/app/main.py`, sent to `azure.llm.invalid`, and s
 
 ## Key performance metrics used in the implementation
 
-These metrics are not only report concepts; they are directly reflected in the implementation and test environment.
+We use these metrics because they provide a practical basis for assessing how well the platform performs in a streaming setting, especially when it comes to processing speed, latency, stability, fault handling, and the effect of configuration changes in the test environment.
 
 | Metric | Definition | How it is measured in this implementation | Why it matters |
 |---|---|---|---|
@@ -370,7 +370,7 @@ Useful Kafka commands can be run in the Kafka container, for example topic inspe
 
 MongoDB collections can be inspected to verify normal outputs, alerts, and invalid-record handling.
 
-## Experiment knobs used in Part 2
+## Experimental parameters used in Part 2
 
 ### Stream speed
 - `REPLAY_SPEED_MULTIPLIER`
