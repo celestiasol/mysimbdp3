@@ -1,0 +1,122 @@
+services:
+  kafka:
+    image: bitnami/kafka:3.7
+    restart: unless-stopped
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_CFG_NUM_PARTITIONS: ${RAW_TOPIC_PARTITIONS:-3}
+      KAFKA_KRAFT_CLUSTER_ID: abcdefghijklmnopqrstuv
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  kafka-init:
+    image: bitnami/kafka:3.7
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command: >
+      '
+      set -e;
+      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic ${RAW_TOPIC_NAME:-azure.llm.raw} --partitions ${RAW_TOPIC_PARTITIONS:-3} --replication-factor 1;
+      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic ${ANALYTICS_TOPIC_NAME:-azure.llm.analytics} --partitions ${ANALYTICS_TOPIC_PARTITIONS:-3} --replication-factor 1;
+      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic ${ALERTS_TOPIC_NAME:-azure.llm.alerts} --partitions ${ALERTS_TOPIC_PARTITIONS:-3} --replication-factor 1;
+      kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic ${INVALID_TOPIC_NAME:-azure.llm.invalid} --partitions ${INVALID_TOPIC_PARTITIONS:-1} --replication-factor 1;
+      '
+
+  mongodb:
+    image: mongodb/mongodb-community-server:7.0-ubuntu2204
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-example}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-streamanalytics}
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongodb/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'db.runCommand({ ping: 1 })' | mongosh mongodb://$$MONGO_INITDB_ROOT_USERNAME:$$MONGO_INITDB_ROOT_PASSWORD@localhost:27017/admin --quiet"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  producer:
+    build:
+      context: .
+      dockerfile: producer/Dockerfile
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      RAW_TOPIC_NAME: ${RAW_TOPIC_NAME:-azure.llm.raw}
+      INPUT_CSV_PATH: /app/data/azure_llm_inference.csv
+      REPLAY_SPEED_MULTIPLIER: ${REPLAY_SPEED_MULTIPLIER:-50}
+      LOOP_DATASET: ${LOOP_DATASET:-false}
+      MAX_MESSAGES: ${MAX_MESSAGES:-0}
+      ERROR_RATE: ${ERROR_RATE:-0.0}
+      INPUT_SCHEMA_VERSION: ${INPUT_SCHEMA_VERSION:-1.0.0}
+    volumes:
+      - ./data:/app/data:ro
+    restart: "no"
+
+  streamanalyticsapp:
+    build:
+      context: .
+      dockerfile: streamanalyticsapp/Dockerfile
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP:-azure-llm-analytics-cg}
+      RAW_TOPIC_NAME: ${RAW_TOPIC_NAME:-azure.llm.raw}
+      ANALYTICS_TOPIC_NAME: ${ANALYTICS_TOPIC_NAME:-azure.llm.analytics}
+      ALERTS_TOPIC_NAME: ${ALERTS_TOPIC_NAME:-azure.llm.alerts}
+      INVALID_TOPIC_NAME: ${INVALID_TOPIC_NAME:-azure.llm.invalid}
+      WINDOW_SIZE_SEC: ${WINDOW_SIZE_SEC:-60}
+      WINDOW_STEP_SEC: ${WINDOW_STEP_SEC:-30}
+      LATE_GRACE_SEC: ${LATE_GRACE_SEC:-10}
+      ALERT_REQUEST_COUNT_THRESHOLD: ${ALERT_REQUEST_COUNT_THRESHOLD:-100}
+      ALERT_GENERATED_TOKENS_THRESHOLD: ${ALERT_GENERATED_TOKENS_THRESHOLD:-10000}
+      PROCESSING_GUARANTEE: ${PROCESSING_GUARANTEE:-at-least-once}
+      ANALYTICS_SCHEMA_VERSION: ${ANALYTICS_SCHEMA_VERSION:-1.0.0}
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-example}@mongodb:27017
+      MONGO_DATABASE: ${MONGO_DATABASE:-streamanalytics}
+    restart: unless-stopped
+
+  tenant-listener:
+    build:
+      context: .
+      dockerfile: tenant_listener/Dockerfile
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ALERTS_TOPIC_NAME: ${ALERTS_TOPIC_NAME:-azure.llm.alerts}
+      TENANT_GROUP_ID: ${TENANT_GROUP_ID:-tenant-alert-listener}
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
