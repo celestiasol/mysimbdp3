@@ -20,7 +20,16 @@ MAX_MESSAGES = int(os.getenv("MAX_MESSAGES", "0"))
 ERROR_RATE = float(os.getenv("ERROR_RATE", "0.0"))
 INPUT_SCHEMA_VERSION = os.getenv("INPUT_SCHEMA_VERSION", "1.0.0")
 
-TIMESTAMP_CANDIDATES = ["Timestamp", "timestamp", "Time", "time", "Datetime", "datetime"]
+TIMESTAMP_CANDIDATES = [
+    "TIMESTAMP",
+    "Timestamp",
+    "timestamp",
+    "Time",
+    "time",
+    "Datetime",
+    "datetime",
+]
+
 SERVICE_CANDIDATES = [
     "ServiceName",
     "service_name",
@@ -85,11 +94,41 @@ def maybe_corrupt(event: Dict[str, object]) -> Dict[str, object]:
     return copy
 
 
+def derive_service_name(row: Dict[str, str]) -> str:
+    explicit = first_present(row, SERVICE_CANDIDATES)
+    if explicit not in (None, ""):
+        return str(explicit)
+
+    context_tokens_raw = first_present(row, CONTEXT_TOKEN_CANDIDATES)
+    generated_tokens_raw = first_present(row, GENERATED_TOKEN_CANDIDATES)
+
+    try:
+        context_tokens = int(float(context_tokens_raw)) if context_tokens_raw not in (None, "") else 0
+        generated_tokens = int(float(generated_tokens_raw)) if generated_tokens_raw not in (None, "") else 0
+    except ValueError:
+        return "unknown-service"
+
+    if context_tokens < 500:
+        size_bucket = "small"
+    elif context_tokens < 2000:
+        size_bucket = "medium"
+    else:
+        size_bucket = "large"
+
+    if generated_tokens < 100:
+        response_bucket = "short"
+    else:
+        response_bucket = "long"
+
+    return f"{size_bucket}-{response_bucket}"
+
+
 def normalize(row: Dict[str, str]) -> Dict[str, object]:
     timestamp_raw = first_present(row, TIMESTAMP_CANDIDATES)
     context_tokens_raw = first_present(row, CONTEXT_TOKEN_CANDIDATES)
     generated_tokens_raw = first_present(row, GENERATED_TOKEN_CANDIDATES)
-    service_name_raw = first_present(row, SERVICE_CANDIDATES) or "unknown-service"
+    service_name_raw = derive_service_name(row)
+    # service_name_raw = first_present(row, SERVICE_CANDIDATES) or "unknown-service"
 
     event = {
         "schema_version": INPUT_SCHEMA_VERSION,
@@ -140,13 +179,17 @@ def main():
             event = normalize(row)
             event_time_ms = event.get("event_time_ms")
             sleep_for_replay(previous_ts_ms, event_time_ms)
-            producer.produce(
-                RAW_TOPIC_NAME,
-                key=str(event.get("service_name", "unknown")),
-                value=json.dumps(event).encode("utf-8"),
-                timestamp=event_time_ms,
-                on_delivery=delivery_report,
-            )
+            produce_kwargs = {
+                "topic": RAW_TOPIC_NAME,
+                "key": str(event.get("service_name", "unknown")),
+                "value": json.dumps(event).encode("utf-8"),
+                "on_delivery": delivery_report,
+            }
+
+            if event_time_ms is not None:
+                produce_kwargs["timestamp"] = int(event_time_ms)
+
+            producer.produce(**produce_kwargs)
             producer.poll(0)
             previous_ts_ms = event_time_ms
             sent += 1
