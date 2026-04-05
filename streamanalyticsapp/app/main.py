@@ -9,7 +9,7 @@ from pymongo import MongoClient
 from quixstreams import Application
 from quixstreams.dataframe.windows.aggregations import Aggregator
 
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
 KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", "azure-llm-analytics-cg")
 RAW_TOPIC_NAME = os.getenv("RAW_TOPIC_NAME", "azure.llm.raw")
 ANALYTICS_TOPIC_NAME = os.getenv("ANALYTICS_TOPIC_NAME", "azure.llm.analytics")

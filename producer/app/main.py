@@ -11,7 +11,7 @@ from typing import Dict, Iterable, Optional
 from confluent_kafka import Producer
 from dateutil import parser as date_parser
 
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
 RAW_TOPIC_NAME = os.getenv("RAW_TOPIC_NAME", "azure.llm.raw")
 INPUT_CSV_PATH = os.getenv("INPUT_CSV_PATH", "/app/data/azure_llm_inference.csv")
 REPLAY_SPEED_MULTIPLIER = float(os.getenv("REPLAY_SPEED_MULTIPLIER", "50"))

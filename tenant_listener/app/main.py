@@ -3,7 +3,7 @@ import os
 
 from confluent_kafka import Consumer
 
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
 ALERTS_TOPIC_NAME = os.getenv("ALERTS_TOPIC_NAME", "azure.llm.alerts")
 TENANT_GROUP_ID = os.getenv("TENANT_GROUP_ID", "tenant-alert-listener")
 
