@@ -18,3 +18,6 @@ __pycache__/
 
 # Docker
 *.log
+
+data/azure_llm_inference.csv
+commands.sh
